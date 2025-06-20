@@ -3,19 +3,20 @@ const User = require("./models/user.js")
 const {connectDB} = require("./config/database.js")
 const {validateSignup} = require("./utils/validation.js")
 const bcrypt = require('bcrypt');
-
+const cookieParser = require("cookie-parser");
+const jwt = require("jsonwebtoken");
+const {userAuth}  =   require("./middleware/auth.js")
 const app = express();
 
 app.use(express.json())
+app.use(cookieParser())
 
 app.post("/signup", async(req,res) => {
 
   const { firstName, lastName, EmailId, password } = req.body;
-
   try {
     // validae the user data before saving to database
     validateSignup(req);
-
 // now hash the password
 const hashPassword = await bcrypt.hash(password,10);
 console.log(hashPassword);
@@ -33,7 +34,6 @@ console.log(hashPassword);
     res.send("email already register");
   }else{
     res.status(400).send({ error: err.message });
-
   }
   }
 });
@@ -41,7 +41,7 @@ console.log(hashPassword);
 // login API 
 app.post("/login", async(req,res) => {
   try {
-     const { EmailId, password } = req.body;
+ const { EmailId, password } = req.body;
   const userData = await User.findOne({EmailId : EmailId});
 
 if(!userData){
@@ -54,7 +54,25 @@ if(!password){
 const validPassword = await bcrypt.compare(password, userData.password);
 
 if(validPassword){
-  res.send("Login successfully")
+//  First create the token
+// Then send it in a cookie
+// Then send a success response
+
+// token created here
+ const token = jwt.sign({id : userData._id},"MysecreatCode18", {expiresIn : "7d"});
+
+const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+
+ // send the cookie
+ res.cookie("token", token, {
+  httpOnly : true,
+  secure : false , // true in production -> it means HTTPS
+  sameSite: "strict",
+  expires :  expiryDate
+ })
+
+  res.send("Login successfully");
 }else{
   throw new Error("Incorrect Password")
 }
@@ -63,82 +81,23 @@ if(validPassword){
   }
 })
 
-// feed api -> get all the user from the database 
-app.get("/feed",async (req,res) => {
-   try {
-     const allUser = await User.find({});
-     if(allUser.length === 0){
-        res.send("No user found")
-     }
-     else{
-res.send(allUser)
-     } 
-   }catch (error) {
- res.status(400).send("Something went wrong")
-   }
-})
-
-// get user by emailId
-app.get("/user", async (req,res) => {
+app.get("/profile",userAuth,(req,res) => {
   try {
-      const userEmail = req.body.EmailId;
-   const checkUser = await User.findOne({ EmailId : userEmail});
-   if(!checkUser){
-    res.send("No user found with this emailId")
-   }else{
-    res.send(checkUser)
-   }
+res.send(req.user)    
   } catch (error) {
-    res.status(400).send("Something went wrong user")
+    res.status(401).send("Invalid or expired token");
   }
 })
 
-// delte user Api 
-app.delete("/user", async (req,res) => {
-    const userId = req.body.userId;
-    try {
-     const userToDelete =  await User.findByIdAndDelete(userId);
-     res.send("User should be deleted")
-        
-    } catch (error) {
-        res.status(400).send("Something went wrong user delete")
-    }
+// sendconnectionRequest
+app.post("/sendConnectionRequest", userAuth, (req,res) => {
+  try {
+    const user = req.user;
+    res.send(`${user.firstName} send the connection request`)
+  } catch (error) {
+        res.status(401).send("Invalid or expired token");
+  }
 })
-
-// update user api 
-app.patch("/user", async (req,res) => {
-    const userId = req.body.userId;
-    const data = req.body;
-    try {
-        const ALLOWED_UPDATE = ["photoUrl", "about", "gender", "age","skills", "userId"];
-    
-const isUpdateAllowed = Object.keys(data).every((k) => ALLOWED_UPDATE.includes(k));
-
-if(!isUpdateAllowed){
-  throw new Error("update not allowed ");
-}
-
-if(data.skills?.length > 10){
-    throw new Error("skill should be less than 10");
-}
-
-        const updateData = await User.findByIdAndUpdate(userId,data, {
-        new: true,           // return the *updated* doc
-        runValidators: true  // enforce schema rules on update
-      });
-    res.send("Data should have been updated")
-    } catch (error) {
-        res.status(400).send("Something went wrong user update  " + error.message)
-    }
-})
-
-// find by email and update
-app.patch("/user/:email", async(req,res) => {
-      
-const updateUser = await User.findOneAndUpdate({EmailId : req.params.email}, req.body) 
-res.send(updateUser);
-})
-
 
 connectDB().then(() => {
 console.log("Database connected");
