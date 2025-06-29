@@ -2,7 +2,7 @@ const express = require("express");
 const {userAuth}  =   require("../middleware/auth.js");
 const {ConnectionRequesModel} = require("../models/connectionRequest.js");
 const User = require("../models/user.js")
-
+const mongoose = require("mongoose")
 
 const requestRouter = express.Router();
 
@@ -52,6 +52,41 @@ requestRouter.post("/request/send/:status/:userId", userAuth, async (req, res) =
   }
 });
 
+requestRouter.post("/request/review/:status/:requestId",userAuth,async(req,res) => {
+     try {
+      const status = req.params.status;
+      const requestId = req.params.requestId;
+      const loggedInUser = req.user;
 
+      if(!status || !requestId){
+        return res.json({message : "not valid request"})
+      };
+
+      // check the staus is either accepted or reject not other that that 
+      if(!["accepted", "rejected"].includes(status)){
+    return res.status(400).json({message :"Not a valid status"})
+      };
+
+      if(! new mongoose.Types.ObjectId(requestId)){
+         return res.status(400).json({ message: "Invalid requestId" });
+      }
+      // now check wheater the requestId that user is pasing is correct or not 
+      const data = await ConnectionRequesModel.findOne({
+        _id : requestId,
+        toUserId :loggedInUser._id,
+        status : "interested",
+      })
+
+      if(!data){
+        return res.status(400).json({message : "not found"})
+      }
+
+      data.status = status;
+      await data.save();
+      res.json({message : "done",data})
+     } catch (error) {
+           res.status(500).json({ message: `ERROR ${error.message}` });
+     }
+} )
 
 module.exports = {requestRouter};
